@@ -1,0 +1,12 @@
+source_lang: "en"
+target_lang: "pl"
+random_seed: 4
+cache_dir: "./data/cache"
+
+dataset_path: "hf_datasets/EuroparlEnPl"
+
+preprocessing:
+  lowercase: true
+  strip: true
+
+calculate_stats: true
