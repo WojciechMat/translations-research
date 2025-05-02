@@ -10,6 +10,7 @@ from hydra.utils import to_absolute_path
 from omegaconf import OmegaConf, DictConfig
 
 from translations.metrics.metric import TestCase
+from translations.metrics.evaluator import TranslationEvaluator
 from translations.models.brutal.brutal_translator import BrutalTranslator
 from translations.models.brutal.dictionary_utils import prepare_dictionary
 from translations.data.management import TranslationDataset, EuroparlDataManager
@@ -132,7 +133,7 @@ class TranslationPipeline:
             Dictionary of metric results
         """
         # For now, just a placeholder
-        print("Evaluation would happen here with these metrics:", metrics)
+        print("Evaluation would happen here with these metrics: ", metrics)
         return {"placeholder": 0.0}
 
     def display_results(
@@ -202,8 +203,13 @@ def main(cfg: DictConfig) -> None:
     # Run the pipeline
     results = pipeline.run(split="test")
 
-    # Display results with clear labels
-    print(f"\nShowing {min(5, len(results))} translation examples: ")
+    # Create evaluator with default metrics
+    evaluator = TranslationEvaluator(
+        metrics=["bleu", "levenshtein", "precision_recall", "token_overlap"],
+    )
+
+    # Display results with metrics
+    print(f"\nShowing {min(5, len(results))} translation examples with metrics: ")
     for i in range(min(5, len(results))):
         pair = results[i]
         test_case = TestCase(
@@ -211,21 +217,40 @@ def main(cfg: DictConfig) -> None:
             expected_translation=data_manager.load_test_data().reference[i],
             actual_translation=pair.target,
         )
+
+        # Evaluate the test case
+        evaluator.evaluate_case(
+            test_case=test_case,
+        )
+
         print(f"Example {i+1}: ")
         print(f"  Original:    {test_case.original_text}")
         print(f"  Expected:    {test_case.expected_translation}")
         print(f"  Translated:  {test_case.actual_translation}")
+        print(f"  Metrics: \n    {test_case.metrics_results}")
         print("-" * 80)
 
-    # Run a separate test case
+    # Run a separate test case with metrics
     test_case = TestCase(
         original_text="Hello world, this is a test translation.",
         expected_translation="Cześć świat, to jest test tłumaczenie.",
     )
 
     test_case.actual_translation = translator.translate(test_case.original_text)
+
+    # Evaluate the test case
+    evaluator.evaluate_case(
+        test_case=test_case,
+    )
+
     print("\nTest Case: ")
     print(test_case)
+
+    # Evaluate overall results
+    _ = pipeline.evaluate(
+        results=results,
+        metrics=["bleu", "levenshtein", "precision_recall"],
+    )
 
 
 if __name__ == "__main__":
