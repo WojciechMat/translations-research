@@ -6,7 +6,7 @@ defaults:
 translator: brutal
 
 dictionary:
-  path: "tmp/dictionaries/en_pl_dictionary.json"
+  path: "dictionaries/en_pl_dictionary.json"
   keep_unknown: true
   lowercase: true
   build: false
