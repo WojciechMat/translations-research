@@ -1,15 +1,17 @@
-from dataclasses import dataclass
 from typing import Optional
+from dataclasses import dataclass
+
 
 @dataclass
 class TestCase:
     """
     Data class to store a translation test case with expected and actual results.
     """
+
     original_text: str
     expected_translation: Optional[str] = None
     actual_translation: Optional[str] = None
-    
+
     def __str__(self) -> str:
         """Get a string representation of the test case."""
         result = f"Original:   {self.original_text}\n"

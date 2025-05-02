@@ -9,13 +9,14 @@ from typing import List, Optional
 import hydra
 from hydra.utils import to_absolute_path
 from omegaconf import OmegaConf, DictConfig
+
 from translations.metrics.metric import TestCase
 from translations.models.brutal.brutal_translator import BrutalTranslator
 from translations.data.management import TranslationDataset, EuroparlDataManager
 from translations.models.brutal.dictionary_utils import (
     create_test_dictionary,
+    build_dictionary_from_diki,
     generate_word_list_from_dataset,
-    build_dictionary_from_wiktionary,
 )
 
 
@@ -140,13 +141,13 @@ class TranslationPipeline:
         return {"placeholder": 0.0}
 
     def display_results(
-    self,
-    results: TranslationDataset,
-    n_examples: int = 5,
-) -> None:
+        self,
+        results: TranslationDataset,
+        n_examples: int = 5,
+    ) -> None:
         """
         Display translation results.
-        
+
         Args:
             results: Dataset with translated texts
             n_examples: Number of examples to display
@@ -156,7 +157,7 @@ class TranslationPipeline:
             pair = results[i]
             print(f"Example {i+1}:")
             print(f"  Source (EN):      {pair.source}")
-            print(f"  Reference (PL):   {pair.target}") # This shows the actual translation
+            print(f"  Reference (PL):   {pair.target}")  # This shows the actual translation
             print("-" * 80)
 
 
@@ -177,7 +178,7 @@ def prepare_dictionary(cfg: DictConfig) -> str:
 
     # Build dictionary if requested
     if cfg.dictionary.build:
-        if cfg.dictionary.source == "wiktionary":
+        if cfg.dictionary.source == "diki":
             # Load dataset first to generate word list
             data_manager = EuroparlDataManager(
                 source_lang=cfg.data.source_lang,
@@ -191,13 +192,13 @@ def prepare_dictionary(cfg: DictConfig) -> str:
             # Generate word list
             generate_word_list_from_dataset(
                 data_manager=data_manager,
-                output_path=to_absolute_path("dictionaries/word_list.txt"),
-                max_words=5000,
+                output_path=to_absolute_path("tmp/dictionaries/word_list.txt"),
+                max_words=50000,
             )
 
-            # Build dictionary from Wiktionary
-            build_dictionary_from_wiktionary(
-                word_list_path=to_absolute_path("dictionaries/word_list.txt"),
+            # Build dictionary from diki
+            build_dictionary_from_diki(
+                word_list_path=to_absolute_path("tmp/dictionaries/word_list.txt"),
                 output_path=dictionary_path,
                 batch_size=50,
                 delay=1.0,
@@ -217,10 +218,10 @@ def prepare_dictionary(cfg: DictConfig) -> str:
 def main(cfg: DictConfig) -> None:
     """Main entry point using Hydra configuration"""
     print(OmegaConf.to_yaml(cfg))
-    
+
     # Prepare dictionary
     dictionary_path = prepare_dictionary(cfg)
-    
+
     # Initialize data manager
     data_manager = EuroparlDataManager(
         source_lang=cfg.data.source_lang,
@@ -228,35 +229,35 @@ def main(cfg: DictConfig) -> None:
         random_seed=cfg.data.random_seed,
         cache_dir=cfg.data.cache_dir,
     )
-    
+
     # Load dataset
     dataset_path = to_absolute_path(cfg.data.dataset_path)
     data_manager.load_dataset(dataset_path=dataset_path)
-    
+
     # Print dataset statistics if requested
     if cfg.data.calculate_stats:
         stats = data_manager.get_dataset_stats()
         print("\nDataset Statistics:")
         for key, value in stats.items():
             print(f"  {key}: {value}")
-    
+
     # Create translator based on configuration
     translator = BrutalTranslator(
         dictionary_path=dictionary_path,
         keep_unknown=cfg.dictionary.keep_unknown,
         lowercase=cfg.dictionary.lowercase,
     )
-    
+
     # Set up and run the translation pipeline
     pipeline = TranslationPipeline(
         translator=translator,
         data_manager=data_manager,
         slice_spec=cfg.slice_spec,
     )
-    
+
     # Run the pipeline
     results = pipeline.run(split="test")
-    
+
     # Display results with clear labels
     print(f"\nShowing {min(5, len(results))} translation examples:")
     for i in range(min(5, len(results))):
@@ -264,20 +265,20 @@ def main(cfg: DictConfig) -> None:
         test_case = TestCase(
             original_text=pair.source,
             expected_translation=data_manager.load_test_data().reference[i],
-            actual_translation=pair.target
+            actual_translation=pair.target,
         )
         print(f"Example {i+1}:")
         print(f"  Original:    {test_case.original_text}")
         print(f"  Expected:    {test_case.expected_translation}")
         print(f"  Translated:  {test_case.actual_translation}")
         print("-" * 80)
-    
+
     # Run a separate test case
     test_case = TestCase(
         original_text="Hello world, this is a test translation.",
-        expected_translation="Cześć świat, to jest test tłumaczenie."
+        expected_translation="Cześć świat, to jest test tłumaczenie.",
     )
-    
+
     test_case.actual_translation = translator.translate(test_case.original_text)
     print("\nTest Case:")
     print(test_case)

@@ -6,10 +6,10 @@ defaults:
 translator: brutal
 
 dictionary:
-  path: "dictionaries/en_pl_dictionary.json"
+  path: "tmp/dictionaries/en_pl_dictionary.json"
   keep_unknown: true
   lowercase: true
   build: false
-  source: "opus"  # "opus" or "wiktionary"
+  source: "opus"  # "opus" or "diki"
 
 slice_spec: ":10"  # Default to first 10 examples
