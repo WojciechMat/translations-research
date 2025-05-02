@@ -2,7 +2,7 @@ import os
 import re
 import json
 import time
-from typing import Set, Dict, List, Tuple, Optional
+from typing import Set, Dict, Tuple, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
@@ -144,12 +144,12 @@ def fetch_translation_from_diki(word: str, known_missing: Set[str] = None) -> Tu
     clean_word = word.strip().lower()
 
     # Construct URL for Diki.pl
-    url = f"https://www.diki.pl/slownik-angielskiego?q={clean_word}"
+    url = f"https://www.diki.pl/slownik-angielskiego?q={clean_word}"  # noqa
 
     try:
         # Add headers to mimic a browser request
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",  # noqa
             "Accept-Language": "en-US,en;q=0.9,pl;q=0.8",
         }
 

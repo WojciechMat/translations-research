@@ -152,10 +152,10 @@ class TranslationPipeline:
             results: Dataset with translated texts
             n_examples: Number of examples to display
         """
-        print(f"\nShowing {min(n_examples, len(results))} translation examples:")
+        print(f"\nShowing {min(n_examples, len(results))} translation examples: ")
         for i in range(min(n_examples, len(results))):
             pair = results[i]
-            print(f"Example {i+1}:")
+            print(f"Example {i+1}: ")
             print(f"  Source (EN):      {pair.source}")
             print(f"  Reference (PL):   {pair.target}")  # This shows the actual translation
             print("-" * 80)
@@ -237,7 +237,7 @@ def main(cfg: DictConfig) -> None:
     # Print dataset statistics if requested
     if cfg.data.calculate_stats:
         stats = data_manager.get_dataset_stats()
-        print("\nDataset Statistics:")
+        print("\nDataset Statistics: ")
         for key, value in stats.items():
             print(f"  {key}: {value}")
 
@@ -259,7 +259,7 @@ def main(cfg: DictConfig) -> None:
     results = pipeline.run(split="test")
 
     # Display results with clear labels
-    print(f"\nShowing {min(5, len(results))} translation examples:")
+    print(f"\nShowing {min(5, len(results))} translation examples: ")
     for i in range(min(5, len(results))):
         pair = results[i]
         test_case = TestCase(
@@ -267,7 +267,7 @@ def main(cfg: DictConfig) -> None:
             expected_translation=data_manager.load_test_data().reference[i],
             actual_translation=pair.target,
         )
-        print(f"Example {i+1}:")
+        print(f"Example {i+1}: ")
         print(f"  Original:    {test_case.original_text}")
         print(f"  Expected:    {test_case.expected_translation}")
         print(f"  Translated:  {test_case.actual_translation}")
@@ -280,7 +280,7 @@ def main(cfg: DictConfig) -> None:
     )
 
     test_case.actual_translation = translator.translate(test_case.original_text)
-    print("\nTest Case:")
+    print("\nTest Case: ")
     print(test_case)
 
 

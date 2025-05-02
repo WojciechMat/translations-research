@@ -3,7 +3,6 @@ import re
 import json
 
 from translations.models.base_translator import Translator
-from translations.models.brutal.dictionary_utils import load_dictionary
 
 
 class BrutalTranslator(Translator):
