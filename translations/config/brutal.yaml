@@ -1,0 +1,15 @@
+# Brutal translator configuration
+defaults:
+  - data: default
+  - _self_
+
+translator: brutal
+
+dictionary:
+  path: "dictionaries/en_pl_dictionary.json"
+  keep_unknown: true
+  lowercase: true
+  build: false
+  source: "opus"  # "opus" or "wiktionary"
+
+slice_spec: ":10"  # Default to first 10 examples
