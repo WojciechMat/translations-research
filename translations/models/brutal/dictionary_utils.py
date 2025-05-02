@@ -139,44 +139,6 @@ def build_dictionary_from_wiktionary(
 
     print(f"Dictionary built with {len(dictionary)} entries.")
 
-
-def download_opus_dictionary(
-    output_path: str = "dictionaries/en_pl_dictionary.json",
-) -> None:
-    """
-    Download and prepare an English-Polish dictionary from OPUS resources.
-
-    Args:
-        output_path: Path to save the resulting dictionary
-    """
-    # URL for OPUS English-Polish dictionary
-    url = "https://object.pouta.csc.fi/OPUS-OpenSubtitles/v2018/dic/en-pl.dic.gz"
-
-    print(f"Downloading dictionary from {url}...")
-    response = requests.get(url)
-
-    if response.status_code != 200:
-        print(f"Failed to download dictionary: {response.status_code}")
-        return
-
-    # Decompress gzip content
-    content = gzip.decompress(response.content).decode("utf-8")
-
-    # Parse dictionary entries
-    dictionary = {}
-    for line in content.splitlines():
-        parts = line.strip().split("\t")
-        if len(parts) >= 2:
-            english = parts[0].lower()
-            polish = parts[1].lower()
-            dictionary[english] = polish
-
-    # Save the dictionary
-    save_dictionary(dictionary, output_path)
-
-    print(f"Dictionary downloaded and saved with {len(dictionary)} entries.")
-
-
 def create_test_dictionary(
     output_path: str = "dictionaries/test_dictionary.json",
 ) -> None:

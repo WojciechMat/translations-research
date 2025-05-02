@@ -28,22 +28,22 @@ class Translator(ABC):
     ) -> TranslationDataset:
         """
         Translate a batch of texts.
-
+        
         Args:
             dataset: Dataset containing texts to translate
-
+            
         Returns:
             Dataset with translated texts
         """
         translated_texts = []
-
+        
         for i in range(len(dataset)):
             pair = dataset[i]
             translated = self.translate(pair.source)
             translated_texts.append(translated)
-
-        # Create a new dataset with the translated texts
+            
+        # Create a new dataset with the source texts and translations
         return TranslationDataset(
             source=dataset.source,
-            reference=translated_texts,
+            reference=translated_texts,  # Put the translations in the reference field
         )
