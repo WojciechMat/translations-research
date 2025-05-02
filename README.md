@@ -28,8 +28,8 @@ python main.py --config-name=smt  # Future implementation
 # Build a dictionary from OPUS
 python main.py dictionary.build=true dictionary.source=opus
 
-# Build a dictionary from diki
-python main.py dictionary.build=true dictionary.source=diki
+# Build a dictionary from gemini
+python main.py dictionary.build=true dictionary.source=gemini
 ```
 ## Configuration Options
 The project uses Hydra for configuration management. The main configuration options are:
@@ -42,7 +42,7 @@ The project uses Hydra for configuration management. The main configuration opti
 - `dictionary.keep_unknown`: Whether to keep unknown words (default: true)
 - `dictionary.lowercase`: Whether to lowercase input text (default: true)
 - `dictionary.build`: Whether to build a dictionary (default: false)
-- `dictionary.source`: Source for building the dictionary ("diki" or "opus") (default: "opus")
+- `dictionary.source`: Source for building the dictionary ("gemini" or "opus") (default: "opus")
 # Development
 
 ### Code Style

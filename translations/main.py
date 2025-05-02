@@ -3,7 +3,6 @@
 English-Polish Translation Pipeline
 """
 
-import os
 from typing import List, Optional
 
 import hydra
@@ -12,12 +11,8 @@ from omegaconf import OmegaConf, DictConfig
 
 from translations.metrics.metric import TestCase
 from translations.models.brutal.brutal_translator import BrutalTranslator
+from translations.models.brutal.dictionary_utils import prepare_dictionary
 from translations.data.management import TranslationDataset, EuroparlDataManager
-from translations.models.brutal.dictionary_utils import (
-    create_test_dictionary,
-    build_dictionary_from_diki,
-    generate_word_list_from_dataset,
-)
 
 
 class TranslationPipeline:
@@ -161,66 +156,10 @@ class TranslationPipeline:
             print("-" * 80)
 
 
-def prepare_dictionary(cfg: DictConfig) -> str:
-    """
-    Prepare the dictionary based on configuration.
-
-    Args:
-        cfg: Configuration
-
-    Returns:
-        Path to the dictionary file
-    """
-    # Create dictionaries directory if it doesn't exist
-    os.makedirs(to_absolute_path("tmp/dictionaries"), exist_ok=True)
-
-    dictionary_path = to_absolute_path(cfg.dictionary.path)
-
-    # Build dictionary if requested
-    if cfg.dictionary.build:
-        if cfg.dictionary.source == "diki":
-            # Load dataset first to generate word list
-            data_manager = EuroparlDataManager(
-                source_lang=cfg.data.source_lang,
-                target_lang=cfg.data.target_lang,
-                random_seed=cfg.data.random_seed,
-                cache_dir=to_absolute_path(cfg.data.cache_dir),
-            )
-            dataset_path = to_absolute_path(cfg.data.dataset_path)
-            data_manager.load_dataset(dataset_path=dataset_path)
-
-            # Generate word list
-            generate_word_list_from_dataset(
-                data_manager=data_manager,
-                output_path=to_absolute_path("tmp/dictionaries/word_list.txt"),
-                max_words=50000,
-            )
-
-            # Build dictionary from diki
-            build_dictionary_from_diki(
-                word_list_path=to_absolute_path("tmp/dictionaries/word_list.txt"),
-                output_path=dictionary_path,
-                batch_size=50,
-                delay=1.0,
-            )
-        else:
-            raise NotImplementedError(f"Wrong dictionary source: {cfg.dictionary.source}")
-
-    # Create test dictionary if no dictionary exists
-    if not os.path.exists(dictionary_path):
-        print(f"Dictionary file {dictionary_path} not found. Creating a test dictionary.")
-        create_test_dictionary(output_path=dictionary_path)
-
-    return dictionary_path
-
-
 @hydra.main(config_path="config", config_name="brutal")
 def main(cfg: DictConfig) -> None:
     """Main entry point using Hydra configuration"""
     print(OmegaConf.to_yaml(cfg))
-
-    # Prepare dictionary
-    dictionary_path = prepare_dictionary(cfg)
 
     # Initialize data manager
     data_manager = EuroparlDataManager(
@@ -240,6 +179,11 @@ def main(cfg: DictConfig) -> None:
         print("\nDataset Statistics: ")
         for key, value in stats.items():
             print(f"  {key}: {value}")
+    # Prepare dictionary
+    dictionary_path = prepare_dictionary(
+        cfg,
+        data_manager=data_manager,
+    )
 
     # Create translator based on configuration
     translator = BrutalTranslator(

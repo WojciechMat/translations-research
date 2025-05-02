@@ -1,13 +1,14 @@
+# flake8: noqa
 import os
 import re
 import json
 import time
-from typing import Set, Dict, Tuple, Optional
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Dict, List, Optional
 
-import requests
 from tqdm import tqdm
-from bs4 import BeautifulSoup
+from hydra.utils import to_absolute_path
+
+from translations.llm_client.gemini_client import GeminiClient
 
 
 def load_dictionary(
@@ -82,7 +83,7 @@ def is_valid_dictionary_word(word: str) -> bool:
 def generate_word_list_from_dataset(
     data_manager,
     output_path: str,
-    max_words: int = 50000,
+    max_words: int = 5000,
 ) -> None:
     """
     Generate a list of unique English words from the dataset.
@@ -121,99 +122,102 @@ def generate_word_list_from_dataset(
     print(f"Generated word list with {len(word_list)} unique words.")
 
 
-def fetch_translation_from_diki(word: str, known_missing: Set[str] = None) -> Tuple[Optional[Tuple[str, str]], bool]:
+def batch_translate_with_gemini(
+    gemini_client: GeminiClient,
+    word_batch: List[str],
+    retry_count: int = 3,
+    retry_delay: float = 5.0,
+) -> Dict[str, str]:
     """
-    Fetch translation for a word from diki.pl
+    Translate a batch of words using Gemini API.
 
     Args:
-        word: Word to translate from English to Polish
-        known_missing: Set of words known to be missing
+        gemini_client: Initialized GeminiClient
+        word_batch: List of words to translate
+        retry_count: Number of retries on failure
+        retry_delay: Delay between retries
 
     Returns:
-        Tuple of (translation tuple or None, bool indicating if word should be retried)
+        Dictionary of English to Polish translations
     """
-    # Skip words already known to be missing
-    if known_missing and word in known_missing:
-        return None, False
+    # Create the prompt for Gemini
+    prompt = f"""
+Task: Translate the following English words to Polish.
 
-    # Skip invalid dictionary words
-    if not is_valid_dictionary_word(word):
-        return None, False
+Instructions:
+1. For each word, provide the most common and appropriate Polish translation.
+2. If a word has multiple meanings, choose the most generally applicable translation.
+3. Respond with ONLY a valid JSON dictionary where keys are the English words and values are their Polish translations.
+4. Do not include any explanations, notes, or markdown formatting in the response - only the JSON dictionary.
+5. If you cannot translate a specific word, exclude it from the JSON response.
 
-    # Clean up the word
-    clean_word = word.strip().lower()
+Words to translate:
+{', '.join(word_batch)}
 
-    # Construct URL for Diki.pl
-    url = f"https://www.diki.pl/slownik-angielskiego?q={clean_word}"  # noqa
+Example response format:
+{{
+  "hello": "cześć",
+  "world": "świat",
+  "computer": "komputer"
+}}
 
-    try:
-        # Add headers to mimic a browser request
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",  # noqa
-            "Accept-Language": "en-US,en;q=0.9,pl;q=0.8",
-        }
+Remember to provide a valid json, it has to be parsable! Answer with a json only!
+"""
 
-        # Send the request
-        response = requests.get(url, headers=headers, timeout=10)
+    # Try to get translations with retries
+    for attempt in range(retry_count):
+        try:
+            response = gemini_client.prompt(prompt)
 
-        # Check if the request was successful
-        if response.status_code == 200:
-            # Parse HTML content
-            soup = BeautifulSoup(response.text, "html.parser")
+            # Extract the JSON dictionary from the response
+            json_text = response.strip()
 
-            # Find the first translation in the proper section
-            # Each meaning is in a div with class="foreignToNativeMeanings"
-            meanings_div = soup.select_one(".foreignToNativeMeanings")
+            # Remove any markdown code block formatting if present
+            if json_text.startswith("```json"):
+                json_text = json_text.replace("```json", "", 1)
+            if json_text.startswith("```"):
+                json_text = json_text.replace("```", "", 1)
+            if json_text.endswith("```"):
+                json_text = json_text[:-3]
 
-            if meanings_div:
-                # Find the first Polish translation (in span with class="hw")
-                translation_element = meanings_div.select_one(".hw")
+            json_text = json_text.strip()
 
-                if translation_element:
-                    polish_translation = translation_element.text.strip()
-                    print(f"Found translation for '{word}': '{polish_translation}'")
-                    return (word, polish_translation), False
+            # Parse the JSON
+            translations = json.loads(json_text)
 
-            # No translation found
-            print(f"No Polish translation found for '{word}'")
-            return None, False
+            return translations
 
-        elif response.status_code == 429:
-            # Too Many Requests - should retry
-            print(f"Rate limited for '{word}', will retry later")
-            return None, True
+        except Exception as e:
+            print(f"Error translating batch (attempt {attempt+1}/{retry_count}): {e}")
+            if attempt < retry_count - 1:
+                print(f"Retrying in {retry_delay} seconds...")
+                time.sleep(retry_delay)
 
-        else:
-            print(f"Failed to fetch translation for '{word}': Status code {response.status_code}")
-            return None, False
-
-    except requests.exceptions.Timeout:
-        # Timeout error - should retry
-        print(f"Timeout for '{word}', will retry later")
-        return None, True
-
-    except Exception as e:
-        print(f"Error processing word '{word}': {e}")
-        return None, False
+    # If all retries failed, return an empty dictionary
+    print(f"Failed to translate batch after {retry_count} attempts")
+    return {}
 
 
-def build_dictionary_from_diki(
+def build_dictionary_with_gemini(
     word_list_path: str,
     output_path: str,
-    max_workers: int = 4,
-    batch_size: int = 20,
-    delay: float = 1.0,
+    generation_cfg: Dict[str, any],
+    batch_size: int = 100,
+    max_batches: Optional[int] = None,
 ) -> None:
     """
-    Build an English-Polish dictionary by scraping Diki.pl using multithreading.
+    Build an English-Polish dictionary using Gemini API.
 
     Args:
         word_list_path: Path to a text file with English words (one per line)
         output_path: Path to save the resulting dictionary
-        max_workers: Maximum number of worker threads
-        batch_size: Size of word batches for processing
-        delay: Delay between requests to avoid rate limiting
+        generation_cfg: Configuration for the Gemini client
+        batch_size: Number of words to process in a batch
+        max_batches: Maximum number of batches to process (None for all)
     """
+    # Initialize Gemini client
+    gemini_client = GeminiClient(generation_cfg)
+
     # Load English words
     with open(word_list_path, "r", encoding="utf-8") as f:
         words = [line.strip() for line in f if line.strip()]
@@ -224,10 +228,6 @@ def build_dictionary_from_diki(
         return
 
     print(f"Loaded {len(words)} words from {word_list_path}")
-
-    # Track words that are not found or failed
-    known_missing = set()
-    retry_words = set()
 
     # Try to load existing dictionary to continue from previous run
     dictionary = {}
@@ -242,71 +242,31 @@ def build_dictionary_from_diki(
         except Exception as e:
             print(f"Error loading existing dictionary: {e}")
 
-    # Process words in batches with ThreadPoolExecutor
-    for i in range(0, len(words), batch_size):
-        batch = words[i : i + batch_size]
+    # Split words into batches
+    batches = [words[i : i + batch_size] for i in range(0, len(words), batch_size)]
 
-        # Process this batch
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # Submit translation tasks
-            future_to_word = {
-                executor.submit(fetch_translation_from_diki, word, known_missing): word
-                for word in batch
-                if word not in known_missing
-            }
+    if max_batches:
+        batches = batches[:max_batches]
+        print(f"Processing {len(batches)} batches (limited by max_batches)")
+    else:
+        print(f"Processing {len(batches)} batches")
 
-            # Process results as they complete
-            for future in as_completed(future_to_word):
-                word = future_to_word[future]
-                try:
-                    result, should_retry = future.result()
+    # Process each batch
+    for batch_idx, batch in enumerate(tqdm(batches, desc="Processing batches")):
+        print(f"Processing batch {batch_idx + 1}/{len(batches)} with {len(batch)} words")
 
-                    if result:
-                        # Add translation to dictionary
-                        english_word, polish_translation = result
-                        dictionary[english_word] = polish_translation
-                    elif should_retry:
-                        # Add to retry list
-                        retry_words.add(word)
-                    else:
-                        # Add to missing list
-                        known_missing.add(word)
+        # Translate the batch
+        batch_translations = batch_translate_with_gemini(gemini_client, batch)
 
-                except Exception as e:
-                    print(f"Error processing word '{word}': {e}")
-                    retry_words.add(word)
-
-                # Short delay to avoid overwhelming the server
-                time.sleep(delay / max_workers)
+        # Update the dictionary
+        dictionary.update(batch_translations)
 
         # Save progress after each batch
         save_dictionary(dictionary, output_path)
-        print(
-            f"Progress: {len(dictionary)} words translated, "
-            f"{len(known_missing)} words not found, "
-            f"{len(retry_words)} words to retry"
-        )
+        print(f"Dictionary now has {len(dictionary)} entries")
 
-        # Add a longer delay between batches
-        time.sleep(delay * 2)
-
-    # Process retry words if any
-    if retry_words:
-        print(f"Retrying {len(retry_words)} words with longer delays...")
-        for word in tqdm(retry_words):
-            result, _ = fetch_translation_from_diki(word, known_missing)
-            if result:
-                english_word, polish_translation = result
-                dictionary[english_word] = polish_translation
-            else:
-                known_missing.add(word)
-
-            # Longer delay for retries
-            time.sleep(delay * 3)
-
-            # Save after each retry
-            if len(dictionary) % 10 == 0:
-                save_dictionary(dictionary, output_path)
+        # Short delay between batches to avoid API rate limits
+        time.sleep(1.0)
 
     # Final save
     save_dictionary(dictionary, output_path)
@@ -316,7 +276,6 @@ def build_dictionary_from_diki(
         create_en_pl_dictionary_for_europarl(output_path)
     else:
         print(f"Dictionary built with {len(dictionary)} entries.")
-        print(f"Words not found: {len(known_missing)}")
 
 
 def create_en_pl_dictionary_for_europarl(
@@ -609,3 +568,65 @@ def create_test_dictionary(
 
     save_dictionary(test_dictionary, output_path)
     print(f"Test dictionary created with {len(test_dictionary)} entries.")
+
+
+def prepare_dictionary(
+    cfg,
+    data_manager=None,
+) -> str:
+    """
+    Prepare the dictionary based on configuration.
+
+    Args:
+        cfg: Configuration object
+        data_manager: Data manager instance (optional)
+
+    Returns:
+        Path to the dictionary file
+    """
+    # Create dictionaries directory if it doesn't exist
+    os.makedirs(to_absolute_path("tmp/dictionaries"), exist_ok=True)
+
+    dictionary_path = to_absolute_path(cfg.dictionary.path)
+
+    # Build dictionary if requested
+    if cfg.dictionary.build:
+        if cfg.dictionary.source == "gemini":
+            # Generate word list if data_manager is provided
+            if data_manager:
+                word_list_path = to_absolute_path("tmp/dictionaries/word_list.txt")
+                generate_word_list_from_dataset(
+                    data_manager=data_manager,
+                    output_path=word_list_path,
+                    max_words=cfg.dictionary.max_words if hasattr(cfg.dictionary, "max_words") else 50000,
+                )
+            else:
+                # Use existing word list
+                word_list_path = cfg.dictionary.word_list_path
+                if not os.path.exists(word_list_path):
+                    raise ValueError(f"Word list not found at {word_list_path}")
+
+            # Configure Gemini client
+            generation_cfg = {
+                "model_path": cfg.gemini.model_path if hasattr(cfg, "gemini") else "gemini-1.5-flash",
+                "max_new_tokens": cfg.gemini.max_new_tokens if hasattr(cfg, "gemini") else 500000,
+                "temperature": cfg.gemini.temperature if hasattr(cfg, "gemini") else 0.2,
+            }
+
+            # Build dictionary using Gemini
+            build_dictionary_with_gemini(
+                word_list_path=word_list_path,
+                output_path=dictionary_path,
+                generation_cfg=generation_cfg,
+                batch_size=cfg.dictionary.batch_size if hasattr(cfg.dictionary, "batch_size") else 500,
+                max_batches=cfg.dictionary.max_batches if hasattr(cfg.dictionary, "max_batches") else None,
+            )
+        else:  # fallback to manual dictionary
+            create_en_pl_dictionary_for_europarl(output_path=dictionary_path)
+
+    # Create test dictionary if no dictionary exists
+    if not os.path.exists(dictionary_path):
+        print(f"Dictionary file {dictionary_path} not found. Creating a test dictionary.")
+        create_test_dictionary(output_path=dictionary_path)
+
+    return dictionary_path

@@ -10,6 +10,6 @@ dictionary:
   keep_unknown: true
   lowercase: true
   build: false
-  source: "diki"
+  source: "gemini"
 
 slice_spec: ":10"  # Default to first 10 examples
