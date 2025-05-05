@@ -14,22 +14,19 @@ pip install -r requirements.txt
 ```
 ## Usage
 ### Brutal Translation
-The "brutal" translator is a simple word-for-word translation system that uses a dictionary to translate each word independently.
+The "brutal" translator is a simple word-for-word translation system that uses a dictionary to translate each word independently. If there is no single-word translation the word is kept the same as original.
 ```sh
 # Run with default settings (uses a test dictionary and the first 10 examples)
-python main.py
+python -m translations.main
 
 # Override configuration values on the command line
-python main.py slice_spec=":20" data.random_seed=123
+python -m translations.main slice_spec=":20" data.random_seed=123
 
 # Use a different config file
-python main.py --config-name=smt  # Future implementation
-
-# Build a dictionary from OPUS
-python main.py dictionary.build=true dictionary.source=opus
+python -m translations.main --config-name=smt  # Future implementation
 
 # Build a dictionary from gemini
-python main.py dictionary.build=true dictionary.source=gemini
+python translations.main dictionary.build=true dictionary.source=gemini
 ```
 ## Configuration Options
 The project uses Hydra for configuration management. The main configuration options are:

@@ -150,6 +150,8 @@ Instructions:
 3. Respond with ONLY a valid JSON dictionary where keys are the English words and values are their Polish translations.
 4. Do not include any explanations, notes, or markdown formatting in the response - only the JSON dictionary.
 5. If you cannot translate a specific word, exclude it from the JSON response.
+6. Use the exact translation, for example "accompanies": "towarzyszy"
+7. Each original word (key) should be mapped to exactly one word (value), without any additional notes.
 
 Words to translate:
 {', '.join(word_batch)}
