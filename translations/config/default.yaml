@@ -1,0 +1,7 @@
+defaults:
+  - data: default
+  - _self_
+
+# Common settings across all translation methods
+output_dir: ./results
+random_seed: 42

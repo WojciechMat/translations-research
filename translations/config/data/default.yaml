@@ -1,9 +1,9 @@
 source_lang: "en"
 target_lang: "pl"
-random_seed: 4
-cache_dir: "./data/cache"
+random_seed: 42
+cache_dir: "./tmp/data/cache"
 
-dataset_path: "hf_datasets/EuroparlEnPl"
+dataset_path: "translations/hf_datasets/EuroparlEnPl"
 
 preprocessing:
   lowercase: true
