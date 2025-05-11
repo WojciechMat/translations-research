@@ -37,40 +37,7 @@ moses-smt/
 
 ### Converting Parallel Corpus to TMX
 ```bash
-python create_tmx.py corpus/europarl.en corpus/europarl.pl europarl.tmx
-```
-
-Then split the resulting TMX file into training and tuning sets:
-```bash
-# Using head/tail for simple splitting (90% training, 10% tuning)
-cat europarl.tmx | grep -v "<?xml" | grep -v "<!DOCTYPE" | grep -v "<tmx" | grep -v "</tmx>" | grep -v "<header" | grep -v "</header>" | grep -v "<body>" | grep -v "</body>" > europarl_content.txt
-
-# Count lines and calculate split
-total_lines=$(wc -l europarl_content.txt | awk '{print $1}')
-train_lines=$(echo "$total_lines * 0.9" | bc | awk '{print int($0)}')
-tune_lines=$(echo "$total_lines - $train_lines" | bc)
-
-# Create header and footer files
-echo '<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE tmx SYSTEM "tmx14.dtd">
-<tmx version="1.4">
-  <header creationtool="SimpleTMXCreator" creationtoolversion="1.0" segtype="sentence" o-tmf="PlainText" adminlang="en" srclang="en" datatype="plaintext">
-  </header>
-  <body>' > header.txt
-
-echo '  </body>
-</tmx>' > footer.txt
-
-# Split the content
-head -n $train_lines europarl_content.txt > train_content.txt
-tail -n $tune_lines europarl_content.txt > tune_content.txt
-
-# Combine to create final files
-cat header.txt train_content.txt footer.txt > moses-smt/tmx-train/europarl.tmx
-cat header.txt tune_content.txt footer.txt > moses-smt/tmx-tune/europarl.tmx
-
-# Clean up
-rm header.txt footer.txt europarl_content.txt train_content.txt tune_content.txt
+python create_tmx.py
 ```
 
 ## Training the Moses SMT System
