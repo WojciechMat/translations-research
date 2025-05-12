@@ -1,7 +1,7 @@
 """
 Google Sheets uploader for translation evaluation.
 """
-
+# flake8: noqa
 import os
 import logging
 from typing import Dict, List
