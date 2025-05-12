@@ -1,6 +1,11 @@
+"""
+Factory class for creating metric instances.
+"""
+
 from typing import Dict, List, Type
 
 from translations.metrics.metric import Metric
+from translations.metrics.llm_score_metric import LLMScoreMetric
 from translations.metrics.basic_metrics import (
     BLEUMetric,
     ExactMatchMetric,
@@ -19,6 +24,7 @@ class MetricFactory:
         "precision_recall": PrecisionRecallMetric,
         "bleu": BLEUMetric,
         "levenshtein": LevenshteinDistanceMetric,
+        "llm_score": LLMScoreMetric,
     }
 
     @classmethod

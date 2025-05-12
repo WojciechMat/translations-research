@@ -1,3 +1,7 @@
+"""
+Base classes for translation metrics.
+"""
+
 from abc import ABC, abstractmethod
 from dataclasses import field, dataclass
 from typing import Any, Dict, List, Optional
@@ -10,6 +14,7 @@ class MetricsResult:
     """
 
     metrics: Dict[str, float] = field(default_factory=dict)
+    additional_info: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
     def add_metric(
         self,
@@ -40,12 +45,58 @@ class MetricsResult:
         """
         return self.metrics.get(name)
 
+    def add_metric_info(
+        self,
+        name: str,
+        key: str,
+        value: Any,
+    ) -> None:
+        """
+        Add additional information for a metric.
+
+        Args:
+            name: Name of the metric
+            key: Key for the additional information
+            value: Value of the additional information
+        """
+        if name not in self.additional_info:
+            self.additional_info[name] = {}
+
+        self.additional_info[name][key] = value
+
+    def get_metric_info(
+        self,
+        name: str,
+        key: str,
+    ) -> Optional[Any]:
+        """
+        Get additional information for a metric.
+
+        Args:
+            name: Name of the metric
+            key: Key for the additional information
+
+        Returns:
+            The value of the additional information or None if not found
+        """
+        if name not in self.additional_info:
+            return None
+
+        return self.additional_info[name].get(key)
+
     def __str__(self) -> str:
         """Format metrics results as a string."""
         if not self.metrics:
             return "No metrics available"
 
-        return "\n".join([f"{name}: {value: .4f}" for name, value in self.metrics.items()])
+        result = "\n".join([f"{name}: {value: .4f}" for name, value in self.metrics.items()])
+
+        # Add any reasoning information for LLM metrics
+        for name, info in self.additional_info.items():
+            if "reasoning" in info:
+                result += f"\n\n{name} reasoning: {info['reasoning']}"
+
+        return result
 
 
 @dataclass
@@ -61,9 +112,9 @@ class TestCase:
 
     def __str__(self) -> str:
         """Get a string representation of the test case."""
-        result = f"Original:   {self.original_text}\n"
+        result = f"Original: {self.original_text}\n"
         if self.expected_translation:
-            result += f"Expected:   {self.expected_translation}\n"
+            result += f"Expected: {self.expected_translation}\n"
         if self.actual_translation:
             result += f"Translated: {self.actual_translation}\n"
         if self.metrics_results.metrics:
@@ -126,4 +177,4 @@ class Metric(ABC):
     @property
     def name(self) -> str:
         """Get the name of the metric."""
-        return self.__class__.__name__
+        return getattr(self, "_name", self.__class__.__name__)

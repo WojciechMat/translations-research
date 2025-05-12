@@ -246,7 +246,7 @@ def main(cfg: DictConfig) -> None:
     results = pipeline.run(split="test")
 
     # Create evaluator with default metrics
-    metrics = ["bleu", "levenshtein", "precision_recall", "token_overlap"]
+    metrics = ["bleu", "levenshtein", "precision_recall", "token_overlap", "llm_score"]
     if hasattr(cfg, "metrics") and cfg.metrics:
         metrics = cfg.metrics
 

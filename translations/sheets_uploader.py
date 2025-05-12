@@ -1,10 +1,10 @@
 """
-Google Sheets uploader for translation evaluation.
+Google Sheets uploader for translation evaluation with LLM reasoning support.
 """
-# flake8: noqa
+
 import os
 import logging
-from typing import Dict, List
+from typing import List
 
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
@@ -58,12 +58,13 @@ class TranslationSheetsUploader:
             result = chr(65 + remainder) + result
         return result
 
-    def add_headers(self, metrics: List[str]):
+    def add_headers(self, metrics: List[str], include_llm_reasoning: bool = False):
         """
         Add headers to the Google Sheet based on the metrics.
 
         Args:
             metrics: List of metric names
+            include_llm_reasoning: Whether to include a column for LLM reasoning
         """
         headers = [
             "Original Text",
@@ -72,13 +73,17 @@ class TranslationSheetsUploader:
             "Overall Score",
         ] + metrics
 
+        # Add LLM reasoning column if needed
+        if include_llm_reasoning:
+            headers.append("LLM Reasoning")
+
         self.worksheet.append_row(headers)
 
         # Get the total number of columns
         num_columns = len(headers)
 
         # Apply formatting
-        header_range = f"A1:{self._column_letter(num_columns)}1"
+        header_range = f"A1:{self._column_letter(num_columns)}1"  # noqa
 
         # Format headers (bold)
         bold_format = {"textFormat": {"bold": True}}
@@ -86,27 +91,37 @@ class TranslationSheetsUploader:
 
         # Format source text area (light green)
         light_green_format = {"backgroundColor": {"red": 0.91, "green": 1.0, "blue": 0.9}}
-        self.worksheet.format("A2:A1000", light_green_format)
+        self.worksheet.format("A2:A1000", light_green_format)  # noqa
 
         # Format expected translation (light blue)
         light_blue_format = {"backgroundColor": {"red": 0.9, "green": 0.9, "blue": 1.0}}
-        self.worksheet.format("B2:B1000", light_blue_format)
+        self.worksheet.format("B2:B1000", light_blue_format)  # noqa
 
         # Format actual translation (light yellow)
         light_yellow_format = {"backgroundColor": {"red": 1.0, "green": 1.0, "blue": 0.9}}
-        self.worksheet.format("C2:C1000", light_yellow_format)
+        self.worksheet.format("C2:C1000", light_yellow_format)  # noqa
+
+        # Format LLM reasoning if present (light gray)
+        if include_llm_reasoning:
+            light_gray_format = {"backgroundColor": {"red": 0.95, "green": 0.95, "blue": 0.95}}
+            reasoning_col = self._column_letter(num_columns)
+            self.worksheet.format(f"{reasoning_col}2:{reasoning_col}1000", light_gray_format)  # noqa
 
         logger.info("Added and formatted headers in Google Sheets")
 
     def append_test_case(
         self,
         test_case: TestCase,
+        metric_names: List[str],
+        include_llm_reasoning: bool = False,
     ):
         """
         Append a single translation test case to the Google Sheet.
 
         Args:
             test_case: The translation test case to upload
+            metric_names: List of metric names to include in the sheet
+            include_llm_reasoning: Whether to include LLM reasoning
         """
         if not self.client:
             return
@@ -115,11 +130,14 @@ class TranslationSheetsUploader:
             try:
                 # Prepare metric scores
                 metric_scores = {}
-                for name, value in test_case.metrics_results.metrics.items():
-                    metric_scores[name] = value
+                for name in metric_names:
+                    value = test_case.metrics_results.get_metric(name)
+                    metric_scores[name] = value if value is not None else ""
 
                 # Calculate overall score (average of all metrics)
-                overall_score = sum(metric_scores.values()) / len(metric_scores) if metric_scores else 0
+                overall_score = (
+                    sum(v for v in metric_scores.values() if v != "") / len(metric_scores) if metric_scores else 0
+                )
 
                 # Prepare row data
                 row_data = [
@@ -130,14 +148,28 @@ class TranslationSheetsUploader:
                 ]
 
                 # Add each individual metric score
-                for metric_name in list(test_case.metrics_results.metrics.keys()):
+                for metric_name in metric_names:
                     row_data.append(metric_scores.get(metric_name, ""))
+
+                # Add LLM reasoning if applicable
+                if include_llm_reasoning:
+                    llm_reasoning = ""
+                    # Look for reasoning in additional_info if it exists
+                    if hasattr(test_case.metrics_results, "additional_info"):
+                        # Look for reasoning in any of the LLM metrics
+                        for name in metric_names:
+                            if "llm" in name.lower():
+                                reasoning = test_case.metrics_results.additional_info.get(name, {}).get("reasoning", "")
+                                if reasoning:
+                                    llm_reasoning = reasoning
+                                    break
+                    row_data.append(llm_reasoning)
 
                 # Append the row to the sheet
                 self.worksheet.append_row(row_data)
 
                 # Apply conditional formatting for metrics
-                self.format_conditionally(test_case.metrics_results.metrics, overall_score)
+                self.format_conditionally(metric_names, overall_score, include_llm_reasoning)
 
                 logger.info(f"Added and formatted test case to Google Sheets: {test_case.original_text[:50]}...")
                 break
@@ -147,13 +179,19 @@ class TranslationSheetsUploader:
                     logger.error(f"Failed after 5 retries: {e}")
                 break
 
-    def format_conditionally(self, metrics: Dict[str, float], overall_score: float):
+    def format_conditionally(
+        self,
+        metric_names: List[str],
+        overall_score: float,
+        include_llm_reasoning: bool = False,
+    ):
         """
         Apply conditional formatting to the metrics cells based on their values.
 
         Args:
-            metrics: Dictionary of metric names and scores
+            metric_names: List of metric names
             overall_score: The overall average score
+            include_llm_reasoning: Whether to include LLM reasoning
         """
         row_index = len(self.worksheet.get_all_records()) + 2  # +2 because of header and 1-indexing
 
@@ -172,18 +210,31 @@ class TranslationSheetsUploader:
             self.worksheet.format(overall_cell, poor_format)
 
         # Format individual metric scores
-        for i, (metric_name, score) in enumerate(metrics.items()):
-            col = 5 + i  # Metrics start from column E (5)
+        col_offset = 5  # Metrics start from column E (5)
+
+        for i, metric_name in enumerate(metric_names):
+            col = col_offset + i
             cell = f"{self._column_letter(col)}{row_index}"
 
-            if score >= 0.8:
-                self.worksheet.format(cell, excellent_format)
-            elif score >= 0.5:
-                self.worksheet.format(cell, good_format)
-            else:
-                self.worksheet.format(cell, poor_format)
+            # Get the value from the sheet since it's already been written
+            try:
+                value = float(self.worksheet.cell(row_index, col).value or 0)
 
-    def upload_evaluation_results(self, evaluator: TranslationEvaluator, test_cases: List[TestCase]):
+                if value >= 0.8:
+                    self.worksheet.format(cell, excellent_format)
+                elif value >= 0.5:
+                    self.worksheet.format(cell, good_format)
+                else:
+                    self.worksheet.format(cell, poor_format)
+            except (ValueError, TypeError):
+                # Skip formatting if the value is not a valid number
+                pass
+
+    def upload_evaluation_results(
+        self,
+        evaluator: TranslationEvaluator,
+        test_cases: List[TestCase],
+    ):
         """
         Upload all evaluation results to Google Sheets.
 
@@ -198,11 +249,18 @@ class TranslationSheetsUploader:
         # Get metric names from evaluator
         metric_names = [metric.name for metric in evaluator.metrics]
 
+        # Check if we need to include LLM reasoning
+        include_llm_reasoning = any("llm" in metric.name.lower() for metric in evaluator.metrics)
+
         # Add headers
-        self.add_headers(metric_names)
+        self.add_headers(metric_names, include_llm_reasoning)
 
         # Upload each test case
         for test_case in test_cases:
-            self.append_test_case(test_case)
+            self.append_test_case(
+                test_case=test_case,
+                metric_names=metric_names,
+                include_llm_reasoning=include_llm_reasoning,
+            )
 
         logger.info(f"Successfully uploaded {len(test_cases)} test cases to Google Sheets")
