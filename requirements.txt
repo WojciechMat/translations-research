@@ -1,2 +1,4 @@
 google_genai==1.13.0
+gspread==6.2.0
 nltk==3.9.1
+oauth2client==4.1.3

@@ -7,5 +7,5 @@ translator: moses
 moses:
   server_url: "http://localhost:8080/RPC2"
 
-
+use_sheets: false
 slice_spec: ":10"  # Default to first 10 examples
