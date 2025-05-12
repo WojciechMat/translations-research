@@ -1,0 +1,11 @@
+# Brutal translator configuration
+defaults:
+  - data: default
+  - _self_
+
+translator: moses
+moses:
+  server_url: "http://localhost:8080/RPC2"
+
+
+slice_spec: ":10"  # Default to first 10 examples

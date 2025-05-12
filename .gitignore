@@ -5,3 +5,8 @@ tmp
 outputs
 .*
 notes.py
+moses-smt
+corpus
+tmx-train
+tmx-tune
+model

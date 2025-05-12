@@ -11,6 +11,7 @@ from omegaconf import OmegaConf, DictConfig
 
 from translations.metrics.metric import TestCase
 from translations.metrics.evaluator import TranslationEvaluator
+from translations.models.moses.moses_translator import MosesTranslator
 from translations.models.brutal.brutal_translator import BrutalTranslator
 from translations.models.brutal.dictionary_utils import prepare_dictionary
 from translations.data.management import TranslationDataset, EuroparlDataManager
@@ -180,18 +181,31 @@ def main(cfg: DictConfig) -> None:
         print("\nDataset Statistics: ")
         for key, value in stats.items():
             print(f"  {key}: {value}")
-    # Prepare dictionary
-    dictionary_path = prepare_dictionary(
-        cfg,
-        data_manager=data_manager,
-    )
 
     # Create translator based on configuration
-    translator = BrutalTranslator(
-        dictionary_path=dictionary_path,
-        keep_unknown=cfg.dictionary.keep_unknown,
-        lowercase=cfg.dictionary.lowercase,
-    )
+    translator = None
+    if cfg.translator == "brutal":
+        # Prepare dictionary for brutal translator
+        dictionary_path = prepare_dictionary(
+            cfg=cfg,
+            data_manager=data_manager,
+        )
+
+        # Create BrutalTranslator
+        translator = BrutalTranslator(
+            dictionary_path=dictionary_path,
+            keep_unknown=cfg.dictionary.keep_unknown,
+            lowercase=cfg.dictionary.lowercase,
+        )
+    elif cfg.translator == "moses":
+        # Create MosesTranslator with configured server URL
+        translator = MosesTranslator(
+            server_url=cfg.moses.server_url
+            if hasattr(cfg, "moses") and hasattr(cfg.moses, "server_url")
+            else "http://localhost:8080/RPC2",
+        )
+    else:
+        raise ValueError(f"Unsupported translator type: {cfg.translator}")
 
     # Set up and run the translation pipeline
     pipeline = TranslationPipeline(

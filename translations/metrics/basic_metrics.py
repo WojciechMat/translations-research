@@ -1,5 +1,8 @@
+import math
 from collections import Counter
 from typing import Dict, List, Tuple
+
+from nltk.translate.bleu_score import SmoothingFunction, sentence_bleu
 
 from translations.metrics.metric import Metric
 
@@ -186,7 +189,7 @@ class PrecisionRecallMetric(Metric):
 
 class BLEUMetric(Metric):
     """
-    Simplified BLEU (Bilingual Evaluation Understudy) metric implementation.
+    BLEU (Bilingual Evaluation Understudy) metric implementation using NLTK.
     BLEU measures the similarity between a machine translation and a reference translation.
     """
 
@@ -207,6 +210,12 @@ class BLEUMetric(Metric):
         self.max_n = max_n
         self.weights = weights or [1.0 / max_n] * max_n
         self.smooth = smooth
+
+        # Initialize smoothing function based on parameter
+        if self.smooth:
+            self.smoothing = SmoothingFunction().method1
+        else:
+            self.smoothing = None
 
     def compute(
         self,
@@ -231,6 +240,43 @@ class BLEUMetric(Metric):
         if not hyp_tokens or not ref_tokens:
             return 0.0
 
+        # Use NLTK's sentence_bleu implementation
+        # NLTK requires reference as a list of references (even for single reference)
+        references = [ref_tokens]
+
+        try:
+            # Call NLTK's sentence_bleu with appropriate parameters
+            bleu_score = sentence_bleu(
+                references=references,
+                hypothesis=hyp_tokens,
+                weights=self.weights,
+                smoothing_function=self.smoothing,
+            )
+
+            return bleu_score
+        except Exception as e:
+            print(e)
+            # Fallback to manual calculation if NLTK fails
+            return self._manual_bleu_calculation(
+                hyp_tokens=hyp_tokens,
+                ref_tokens=ref_tokens,
+            )
+
+    def _manual_bleu_calculation(
+        self,
+        hyp_tokens: List[str],
+        ref_tokens: List[str],
+    ) -> float:
+        """
+        Fallback manual BLEU calculation if NLTK fails.
+
+        Args:
+            hyp_tokens: Tokens from hypothesis
+            ref_tokens: Tokens from reference
+
+        Returns:
+            BLEU score (0.0 to 1.0)
+        """
         # Calculate brevity penalty
         bp = self._brevity_penalty(
             hyp_length=len(hyp_tokens),
@@ -343,8 +389,6 @@ class BLEUMetric(Metric):
         x: float,
     ) -> float:
         """Safe logarithm function that handles zero."""
-        import math
-
         return math.log(max(x, 1e-10))
 
     def _exp(
@@ -352,8 +396,6 @@ class BLEUMetric(Metric):
         x: float,
     ) -> float:
         """Exponential function."""
-        import math
-
         return math.exp(x)
 
 
