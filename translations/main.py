@@ -18,7 +18,7 @@ from translations.sheets_uploader import TranslationSheetsUploader
 from translations.models.moses.moses_translator import MosesTranslator
 from translations.models.brutal.brutal_translator import BrutalTranslator
 from translations.models.brutal.dictionary_utils import prepare_dictionary
-from translations.data.management import TranslationDataset, EuroparlDataManager
+from translations.data.management import TranslationDataset, TranslationDatasetManager
 
 load_dotenv()
 
@@ -34,7 +34,7 @@ class TranslationPipeline:
     def __init__(
         self,
         translator,
-        data_manager: EuroparlDataManager,
+        data_manager: TranslationDatasetManager,
         slice_spec: Optional[str] = None,
     ) -> None:
         """
@@ -192,7 +192,7 @@ def main(cfg: DictConfig) -> None:
     print(OmegaConf.to_yaml(cfg))
 
     # Initialize data manager
-    data_manager = EuroparlDataManager(
+    data_manager = TranslationDatasetManager(
         source_lang=cfg.data.source_lang,
         target_lang=cfg.data.target_lang,
         random_seed=cfg.data.random_seed,

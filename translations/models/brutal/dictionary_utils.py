@@ -89,7 +89,7 @@ def generate_word_list_from_dataset(
     Generate a list of unique English words from the dataset.
 
     Args:
-        data_manager: EuroparlDataManager instance
+        data_manager: TranslationDatasetManager instance
         output_path: Path to save the word list
         max_words: Maximum number of words to include
     """

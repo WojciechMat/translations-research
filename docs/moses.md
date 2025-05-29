@@ -46,7 +46,7 @@ With the TMX files prepared, we can now train Moses:
 
 ```bash
 cd moses-smt
-make SOURCE_LANG=en TARGET_LANG=pl LABEL=europarl
+make SOURCE_LANG=en TARGET_LANG=pl LABEL=mixed
 ```
 
 The command:
@@ -63,7 +63,7 @@ When complete, you'll have a Docker image tagged as `moses-smt:europarl-en-pl`.
 To start the Moses server:
 
 ```bash
-make server SOURCE_LANG=en TARGET_LANG=pl LABEL=europarl PORT=8080
+make server SOURCE_LANG=en TARGET_LANG=pl LABEL=mixed PORT=8080
 ```
 
 This starts the Moses server, making it accessible via XML-RPC at http://localhost:8080/RPC2.

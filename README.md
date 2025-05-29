@@ -23,7 +23,7 @@ python -m translations.main
 python -m translations.main slice_spec=":20" data.random_seed=123
 
 # Use a different config file
-python -m translations.main --config-name=smt  # Future implementation
+python -m translations.main --config-name=moses
 
 # Build a dictionary from gemini
 python translations.main dictionary.build=true dictionary.source=gemini

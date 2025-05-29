@@ -3,7 +3,7 @@ import os
 import argparse
 from typing import Tuple
 
-from translations.data.management import TranslationDataset, EuroparlDataManager
+from translations.data.management import TranslationDataset, TranslationDatasetManager
 
 
 def dataset_to_tmx(dataset: TranslationDataset, output_file: str, src_lang: str, tgt_lang: str) -> None:
@@ -56,7 +56,7 @@ def dataset_to_tmx(dataset: TranslationDataset, output_file: str, src_lang: str,
 
 
 def create_tmx_files(
-    data_manager: EuroparlDataManager,
+    data_manager: TranslationDatasetManager,
     output_dir: str,
     src_lang: str,
     tgt_lang: str,
@@ -67,7 +67,7 @@ def create_tmx_files(
     Create TMX files for Moses training and tuning from Europarl data.
 
     Args:
-        data_manager: EuroparlDataManager instance
+        data_manager: TranslationDatasetManager instance
         output_dir: Directory to save TMX files
         src_lang: Source language code
         tgt_lang: Target language code
@@ -133,7 +133,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Initialize data manager
-    data_manager = EuroparlDataManager(
+    data_manager = TranslationDatasetManager(
         source_lang=args.source_lang,
         target_lang=args.target_lang,
         random_seed=args.random_seed,
