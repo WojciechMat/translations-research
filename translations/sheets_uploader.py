@@ -1,9 +1,11 @@
 """
 Google Sheets uploader for translation evaluation with LLM reasoning support.
+Optimized for rate limiting and batch operations.
 """
 
 import os
 import logging
+import time
 from typing import List
 
 import gspread
@@ -16,12 +18,14 @@ logger = logging.getLogger(__name__)
 
 
 class TranslationSheetsUploader:
-    """Class to upload translation evaluation results to Google Sheets row by row."""
+    """Class to upload translation evaluation results to Google Sheets with batch operations."""
 
     def __init__(self):
         """Initialize the Google Sheets uploader using the SHEET environment variable."""
         self.sheet_url = os.getenv("SHEET")
         self.client = None
+        self.batch_size = 20  # Number of rows to upload at once
+        self.rate_limit_delay = 1.5  # Seconds to wait between batch operations
 
         if not self.sheet_url:
             logger.warning("No Google Sheet URL provided. Set the SHEET environment variable.")
@@ -58,6 +62,10 @@ class TranslationSheetsUploader:
             result = chr(65 + remainder) + result
         return result
 
+    def _rate_limit_sleep(self):
+        """Sleep to respect rate limits."""
+        time.sleep(self.rate_limit_delay)
+
     def add_headers(self, metrics: List[str], include_llm_reasoning: bool = False):
         """
         Add headers to the Google Sheet based on the metrics.
@@ -77,158 +85,247 @@ class TranslationSheetsUploader:
         if include_llm_reasoning:
             headers.append("LLM Reasoning")
 
+        # Clear existing content first
+        self.worksheet.clear()
+        self._rate_limit_sleep()
+        
+        # Add headers
         self.worksheet.append_row(headers)
+        self._rate_limit_sleep()
 
         # Get the total number of columns
         num_columns = len(headers)
 
-        # Apply formatting
-        header_range = f"A1:{self._column_letter(num_columns)}1"  # noqa
-
-        # Format headers (bold)
-        bold_format = {"textFormat": {"bold": True}}
-        self.worksheet.format(header_range, bold_format)
-
-        # Format source text area (light green)
-        light_green_format = {"backgroundColor": {"red": 0.91, "green": 1.0, "blue": 0.9}}
-        self.worksheet.format("A2:A1000", light_green_format)  # noqa
-
-        # Format expected translation (light blue)
-        light_blue_format = {"backgroundColor": {"red": 0.9, "green": 0.9, "blue": 1.0}}
-        self.worksheet.format("B2:B1000", light_blue_format)  # noqa
-
-        # Format actual translation (light yellow)
-        light_yellow_format = {"backgroundColor": {"red": 1.0, "green": 1.0, "blue": 0.9}}
-        self.worksheet.format("C2:C1000", light_yellow_format)  # noqa
-
-        # Format LLM reasoning if present (light gray)
-        if include_llm_reasoning:
-            light_gray_format = {"backgroundColor": {"red": 0.95, "green": 0.95, "blue": 0.95}}
-            reasoning_col = self._column_letter(num_columns)
-            self.worksheet.format(f"{reasoning_col}2:{reasoning_col}1000", light_gray_format)  # noqa
+        # Apply formatting in batches
+        self._apply_header_formatting(num_columns, include_llm_reasoning)
 
         logger.info("Added and formatted headers in Google Sheets")
 
-    def append_test_case(
+    def _apply_header_formatting(self, num_columns: int, include_llm_reasoning: bool):
+        """Apply formatting to headers and columns."""
+        try:
+            # Format headers (bold)
+            header_range = f"A1:{self._column_letter(num_columns)}1"
+            bold_format = {"textFormat": {"bold": True}}
+            self.worksheet.format(header_range, bold_format)
+            self._rate_limit_sleep()
+
+            # Format source text area (light green)
+            light_green_format = {"backgroundColor": {"red": 0.91, "green": 1.0, "blue": 0.9}}
+            self.worksheet.format("A2:A1000", light_green_format)
+            self._rate_limit_sleep()
+
+            # Format expected translation (light blue)
+            light_blue_format = {"backgroundColor": {"red": 0.9, "green": 0.9, "blue": 1.0}}
+            self.worksheet.format("B2:B1000", light_blue_format)
+            self._rate_limit_sleep()
+
+            # Format actual translation (light yellow)
+            light_yellow_format = {"backgroundColor": {"red": 1.0, "green": 1.0, "blue": 0.9}}
+            self.worksheet.format("C2:C1000", light_yellow_format)
+            self._rate_limit_sleep()
+
+            # Format LLM reasoning if present (light gray)
+            if include_llm_reasoning:
+                light_gray_format = {"backgroundColor": {"red": 0.95, "green": 0.95, "blue": 0.95}}
+                reasoning_col = self._column_letter(num_columns)
+                self.worksheet.format(f"{reasoning_col}2:{reasoning_col}1000", light_gray_format)
+                self._rate_limit_sleep()
+
+        except Exception as e:
+            logger.warning(f"Failed to apply some formatting: {e}")
+
+    def _prepare_test_case_row(
         self,
         test_case: TestCase,
         metric_names: List[str],
         include_llm_reasoning: bool = False,
-    ):
+    ) -> List:
         """
-        Append a single translation test case to the Google Sheet.
+        Prepare a single test case row for batch upload.
 
         Args:
-            test_case: The translation test case to upload
+            test_case: The translation test case to prepare
             metric_names: List of metric names to include in the sheet
             include_llm_reasoning: Whether to include LLM reasoning
+
+        Returns:
+            List of values for the row
         """
-        if not self.client:
-            return
+        # Prepare metric scores
+        metric_scores = {}
+        for name in metric_names:
+            value = test_case.metrics_results.get_metric(name)
+            metric_scores[name] = value if value is not None else ""
 
-        for retry in range(5):
-            try:
-                # Prepare metric scores
-                metric_scores = {}
+        # Calculate overall score (average of all metrics)
+        overall_score = (
+            sum(v for v in metric_scores.values() if v != "") / len(metric_scores) if metric_scores else 0
+        )
+
+        # Prepare row data
+        row_data = [
+            test_case.original_text[:49999] if test_case.original_text else "",
+            test_case.expected_translation[:49999] if test_case.expected_translation else "",
+            test_case.actual_translation[:49999] if test_case.actual_translation else "",
+            overall_score,
+        ]
+
+        # Add each individual metric score
+        for metric_name in metric_names:
+            row_data.append(metric_scores.get(metric_name, ""))
+
+        # Add LLM reasoning if applicable
+        if include_llm_reasoning:
+            llm_reasoning = ""
+            # Look for reasoning in additional_info if it exists
+            if hasattr(test_case.metrics_results, "additional_info"):
+                # Look for reasoning in any of the LLM metrics
                 for name in metric_names:
-                    value = test_case.metrics_results.get_metric(name)
-                    metric_scores[name] = value if value is not None else ""
+                    if "llm" in name.lower():
+                        reasoning = test_case.metrics_results.additional_info.get(name, {}).get("reasoning", "")
+                        if reasoning:
+                            llm_reasoning = reasoning
+                            break
+            row_data.append(llm_reasoning)
 
-                # Calculate overall score (average of all metrics)
-                overall_score = (
-                    sum(v for v in metric_scores.values() if v != "") / len(metric_scores) if metric_scores else 0
-                )
+        return row_data
 
-                # Prepare row data
-                row_data = [
-                    test_case.original_text[:49999] if test_case.original_text else "",
-                    test_case.expected_translation[:49999] if test_case.expected_translation else "",
-                    test_case.actual_translation[:49999] if test_case.actual_translation else "",
-                    overall_score,
-                ]
-
-                # Add each individual metric score
-                for metric_name in metric_names:
-                    row_data.append(metric_scores.get(metric_name, ""))
-
-                # Add LLM reasoning if applicable
-                if include_llm_reasoning:
-                    llm_reasoning = ""
-                    # Look for reasoning in additional_info if it exists
-                    if hasattr(test_case.metrics_results, "additional_info"):
-                        # Look for reasoning in any of the LLM metrics
-                        for name in metric_names:
-                            if "llm" in name.lower():
-                                reasoning = test_case.metrics_results.additional_info.get(name, {}).get("reasoning", "")
-                                if reasoning:
-                                    llm_reasoning = reasoning
-                                    break
-                    row_data.append(llm_reasoning)
-
-                # Append the row to the sheet
-                self.worksheet.append_row(row_data)
-
-                # Apply conditional formatting for metrics
-                self.format_conditionally(metric_names, overall_score, include_llm_reasoning)
-
-                logger.info(f"Added and formatted test case to Google Sheets: {test_case.original_text[:50]}...")
-                break
-            except Exception as e:
-                logger.error(f"Failed to upload test case to Google Sheets: {e}")
-                if retry == 4:  # Last retry
-                    logger.error(f"Failed after 5 retries: {e}")
-                break
-
-    def format_conditionally(
+    def upload_test_cases_batch(
         self,
+        test_cases: List[TestCase],
         metric_names: List[str],
-        overall_score: float,
         include_llm_reasoning: bool = False,
     ):
         """
-        Apply conditional formatting to the metrics cells based on their values.
+        Upload multiple test cases in batches to reduce API calls.
 
         Args:
+            test_cases: List of test cases to upload
             metric_names: List of metric names
-            overall_score: The overall average score
             include_llm_reasoning: Whether to include LLM reasoning
         """
-        row_index = len(self.worksheet.get_all_records()) + 2  # +2 because of header and 1-indexing
+        if not self.client:
+            logger.warning("Google Sheets client not initialized. Cannot upload results.")
+            return
 
-        # Define color formats
-        excellent_format = {"backgroundColor": {"red": 0.75, "green": 0.9, "blue": 0.75}}  # Light green
-        good_format = {"backgroundColor": {"red": 0.9, "green": 0.9, "blue": 0.75}}  # Light yellow
-        poor_format = {"backgroundColor": {"red": 1.0, "green": 0.80, "blue": 0.85}}  # Light red
+        # Prepare all rows
+        all_rows = []
+        for test_case in test_cases:
+            row_data = self._prepare_test_case_row(test_case, metric_names, include_llm_reasoning)
+            all_rows.append(row_data)
 
-        # Format overall score (column D)
-        overall_cell = f"D{row_index}"
-        if overall_score >= 0.8:
-            self.worksheet.format(overall_cell, excellent_format)
-        elif overall_score >= 0.5:
-            self.worksheet.format(overall_cell, good_format)
-        else:
-            self.worksheet.format(overall_cell, poor_format)
+        # Upload in batches
+        for i in range(0, len(all_rows), self.batch_size):
+            batch = all_rows[i:i + self.batch_size]
+            
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    # Use batch update for better performance
+                    start_row = i + 2  # +2 because of header and 1-indexing
+                    end_row = start_row + len(batch) - 1
+                    
+                    range_name = f"A{start_row}:{self._column_letter(len(batch[0]))}{end_row}"
+                    
+                    self.worksheet.update(range_name, batch, value_input_option='USER_ENTERED')
+                    
+                    logger.info(f"Uploaded batch {i//self.batch_size + 1}: rows {start_row}-{end_row}")
+                    
+                    # Apply conditional formatting for this batch
+                    self._apply_batch_conditional_formatting(
+                        batch, start_row, metric_names, include_llm_reasoning
+                    )
+                    
+                    # Rate limiting
+                    self._rate_limit_sleep()
+                    break
+                    
+                except Exception as e:
+                    if "429" in str(e) or "quota" in str(e).lower():
+                        wait_time = (attempt + 1) * 5  # Exponential backoff
+                        logger.warning(f"Rate limit hit, waiting {wait_time} seconds before retry {attempt + 1}/{max_retries}")
+                        time.sleep(wait_time)
+                    else:
+                        logger.error(f"Failed to upload batch {i//self.batch_size + 1}: {e}")
+                        break
+            else:
+                logger.error(f"Failed to upload batch {i//self.batch_size + 1} after {max_retries} attempts")
 
-        # Format individual metric scores
-        col_offset = 5  # Metrics start from column E (5)
+        logger.info(f"Successfully uploaded {len(test_cases)} test cases to Google Sheets in batches")
 
-        for i, metric_name in enumerate(metric_names):
-            col = col_offset + i
-            cell = f"{self._column_letter(col)}{row_index}"
+    def _apply_batch_conditional_formatting(
+        self,
+        batch_rows: List[List],
+        start_row: int,
+        metric_names: List[str],
+        include_llm_reasoning: bool = False,
+    ):
+        """
+        Apply conditional formatting to a batch of rows.
+        
+        Args:
+            batch_rows: List of row data
+            start_row: Starting row number in the sheet
+            metric_names: List of metric names
+            include_llm_reasoning: Whether LLM reasoning is included
+        """
+        try:
+            # Define color formats
+            excellent_format = {"backgroundColor": {"red": 0.75, "green": 0.9, "blue": 0.75}}
+            good_format = {"backgroundColor": {"red": 0.9, "green": 0.9, "blue": 0.75}}
+            poor_format = {"backgroundColor": {"red": 1.0, "green": 0.80, "blue": 0.85}}
 
-            # Get the value from the sheet since it's already been written
-            try:
-                value = float(self.worksheet.cell(row_index, col).value or 0)
+            # Prepare batch formatting requests
+            format_requests = []
+            
+            for i, row_data in enumerate(batch_rows):
+                row_index = start_row + i
+                overall_score = row_data[3] if len(row_data) > 3 else 0
+                
+                # Format overall score (column D)
+                score_format = (excellent_format if overall_score >= 0.8 
+                              else good_format if overall_score >= 0.5 
+                              else poor_format)
+                
+                format_requests.append({
+                    'range': f"D{row_index}",
+                    'format': score_format
+                })
+                
+                # Format individual metric scores
+                col_offset = 5  # Metrics start from column E (5)
+                for j, metric_name in enumerate(metric_names):
+                    col = col_offset + j
+                    if col < len(row_data):
+                        try:
+                            value = float(row_data[col - 1]) if row_data[col - 1] != "" else 0
+                            metric_format = (excellent_format if value >= 0.8 
+                                           else good_format if value >= 0.5 
+                                           else poor_format)
+                            
+                            format_requests.append({
+                                'range': f"{self._column_letter(col)}{row_index}",
+                                'format': metric_format
+                            })
+                        except (ValueError, TypeError, IndexError):
+                            pass
 
-                if value >= 0.8:
-                    self.worksheet.format(cell, excellent_format)
-                elif value >= 0.5:
-                    self.worksheet.format(cell, good_format)
-                else:
-                    self.worksheet.format(cell, poor_format)
-            except (ValueError, TypeError):
-                # Skip formatting if the value is not a valid number
-                pass
+            # Apply formatting in smaller sub-batches to avoid overwhelming the API
+            batch_format_size = 10
+            for i in range(0, len(format_requests), batch_format_size):
+                sub_batch = format_requests[i:i + batch_format_size]
+                for req in sub_batch:
+                    try:
+                        self.worksheet.format(req['range'], req['format'])
+                    except Exception as e:
+                        logger.debug(f"Failed to format cell {req['range']}: {e}")
+                
+                # Small delay between format sub-batches
+                time.sleep(0.5)
+                        
+        except Exception as e:
+            logger.warning(f"Failed to apply conditional formatting for batch starting at row {start_row}: {e}")
 
     def upload_evaluation_results(
         self,
@@ -236,7 +333,7 @@ class TranslationSheetsUploader:
         test_cases: List[TestCase],
     ):
         """
-        Upload all evaluation results to Google Sheets.
+        Upload all evaluation results to Google Sheets using batch operations.
 
         Args:
             evaluator: The TranslationEvaluator instance that contains metrics
@@ -255,12 +352,25 @@ class TranslationSheetsUploader:
         # Add headers
         self.add_headers(metric_names, include_llm_reasoning)
 
-        # Upload each test case
-        for test_case in test_cases:
-            self.append_test_case(
-                test_case=test_case,
-                metric_names=metric_names,
-                include_llm_reasoning=include_llm_reasoning,
-            )
+        # Upload all test cases in batches
+        self.upload_test_cases_batch(
+            test_cases=test_cases,
+            metric_names=metric_names,
+            include_llm_reasoning=include_llm_reasoning,
+        )
 
-        logger.info(f"Successfully uploaded {len(test_cases)} test cases to Google Sheets")
+        logger.info(f"Successfully uploaded {len(test_cases)} test cases to Google Sheets using batch operations")
+
+    # Keep the old method for backwards compatibility
+    def append_test_case(
+        self,
+        test_case: TestCase,
+        metric_names: List[str],
+        include_llm_reasoning: bool = False,
+    ):
+        """
+        Append a single translation test case to the Google Sheet.
+        DEPRECATED: Use upload_test_cases_batch for better performance.
+        """
+        logger.warning("append_test_case is deprecated. Use upload_test_cases_batch for better performance.")
+        self.upload_test_cases_batch([test_case], metric_names, include_llm_reasoning)
