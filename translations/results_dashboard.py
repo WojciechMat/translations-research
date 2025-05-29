@@ -17,6 +17,9 @@ import plotly.graph_objects as go
 from googleapiclient.discovery import build
 from google.oauth2.service_account import Credentials
 
+# Load environment variables
+load_dotenv()
+
 creds_file = os.getenv(
     "GOOGLE_APPLICATION_CREDENTIALS",
     "google_credentials.json",
@@ -33,9 +36,6 @@ CREDENTIALS = Credentials.from_service_account_file(
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# Load environment variables
-load_dotenv()
 
 # Set page configuration
 st.set_page_config(
