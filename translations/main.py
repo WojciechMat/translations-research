@@ -17,6 +17,7 @@ from translations.metrics.evaluator import TranslationEvaluator
 from translations.sheets_uploader import TranslationSheetsUploader
 from translations.models.moses.moses_translator import MosesTranslator
 from translations.models.brutal.brutal_translator import BrutalTranslator
+from translations.models.gemini.gemini_translator import GeminiTranslator
 from translations.models.brutal.dictionary_utils import prepare_dictionary
 from translations.data.management import TranslationDataset, TranslationDatasetManager
 
@@ -232,6 +233,9 @@ def main(cfg: DictConfig) -> None:
             if hasattr(cfg, "moses") and hasattr(cfg.moses, "server_url")
             else "http://localhost:8080/RPC2",
         )
+
+    elif cfg.translator == "gemini":
+        translator = GeminiTranslator()
     else:
         raise ValueError(f"Unsupported translator type: {cfg.translator}")
 

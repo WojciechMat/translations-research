@@ -4,8 +4,8 @@ Optimized for rate limiting and batch operations.
 """
 
 import os
-import logging
 import time
+import logging
 from typing import List
 
 import gspread
@@ -25,7 +25,7 @@ class TranslationSheetsUploader:
         self.sheet_url = os.getenv("SHEET")
         self.client = None
         self.batch_size = 20  # Number of rows to upload at once
-        self.rate_limit_delay = 1.5  # Seconds to wait between batch operations
+        self.rate_limit_delay = 1.5  # Seconds to between batch operations
 
         if not self.sheet_url:
             logger.warning("No Google Sheet URL provided. Set the SHEET environment variable.")
@@ -88,7 +88,7 @@ class TranslationSheetsUploader:
         # Clear existing content first
         self.worksheet.clear()
         self._rate_limit_sleep()
-        
+
         # Add headers
         self.worksheet.append_row(headers)
         self._rate_limit_sleep()
@@ -159,9 +159,7 @@ class TranslationSheetsUploader:
             metric_scores[name] = value if value is not None else ""
 
         # Calculate overall score (average of all metrics)
-        overall_score = (
-            sum(v for v in metric_scores.values() if v != "") / len(metric_scores) if metric_scores else 0
-        )
+        overall_score = sum(v for v in metric_scores.values() if v != "") / len(metric_scores) if metric_scores else 0
 
         # Prepare row data
         row_data = [
@@ -217,34 +215,34 @@ class TranslationSheetsUploader:
 
         # Upload in batches
         for i in range(0, len(all_rows), self.batch_size):
-            batch = all_rows[i:i + self.batch_size]
-            
+            batch = all_rows[i : i + self.batch_size]
+
             max_retries = 3
             for attempt in range(max_retries):
                 try:
                     # Use batch update for better performance
                     start_row = i + 2  # +2 because of header and 1-indexing
                     end_row = start_row + len(batch) - 1
-                    
+
                     range_name = f"A{start_row}:{self._column_letter(len(batch[0]))}{end_row}"
-                    
-                    self.worksheet.update(range_name, batch, value_input_option='USER_ENTERED')
-                    
+
+                    self.worksheet.update(range_name, batch, value_input_option="USER_ENTERED")
+
                     logger.info(f"Uploaded batch {i//self.batch_size + 1}: rows {start_row}-{end_row}")
-                    
+
                     # Apply conditional formatting for this batch
-                    self._apply_batch_conditional_formatting(
-                        batch, start_row, metric_names, include_llm_reasoning
-                    )
-                    
+                    self._apply_batch_conditional_formatting(batch, start_row, metric_names, include_llm_reasoning)
+
                     # Rate limiting
                     self._rate_limit_sleep()
                     break
-                    
+
                 except Exception as e:
                     if "429" in str(e) or "quota" in str(e).lower():
-                        wait_time = (attempt + 1) * 5  # Exponential backoff
-                        logger.warning(f"Rate limit hit, waiting {wait_time} seconds before retry {attempt + 1}/{max_retries}")
+                        wait_time = (attempt + 1) * 30  # Exponential backoff
+                        logger.warning(
+                            f"Rate limit hit, waiting {wait_time} seconds before retry {attempt + 1}/{max_retries}"
+                        )
                         time.sleep(wait_time)
                     else:
                         logger.error(f"Failed to upload batch {i//self.batch_size + 1}: {e}")
@@ -254,78 +252,125 @@ class TranslationSheetsUploader:
 
         logger.info(f"Successfully uploaded {len(test_cases)} test cases to Google Sheets in batches")
 
-    def _apply_batch_conditional_formatting(
+    def _apply_all_conditional_formatting(
         self,
-        batch_rows: List[List],
-        start_row: int,
+        all_rows: List[List],
         metric_names: List[str],
         include_llm_reasoning: bool = False,
     ):
         """
-        Apply conditional formatting to a batch of rows.
-        
+        Apply conditional formatting to all rows using range-based formatting for better efficiency.
+
         Args:
-            batch_rows: List of row data
-            start_row: Starting row number in the sheet
+            all_rows: All row data
             metric_names: List of metric names
             include_llm_reasoning: Whether LLM reasoning is included
         """
+        if not all_rows:
+            return
+
         try:
             # Define color formats
             excellent_format = {"backgroundColor": {"red": 0.75, "green": 0.9, "blue": 0.75}}
             good_format = {"backgroundColor": {"red": 0.9, "green": 0.9, "blue": 0.75}}
             poor_format = {"backgroundColor": {"red": 1.0, "green": 0.80, "blue": 0.85}}
 
-            # Prepare batch formatting requests
-            format_requests = []
-            
-            for i, row_data in enumerate(batch_rows):
+            # Group cells by their format to apply range-based formatting
+            excellent_ranges = []
+            good_ranges = []
+            poor_ranges = []
+
+            start_row = 2  # Data starts at row 2
+
+            for i, row_data in enumerate(all_rows):
                 row_index = start_row + i
-                overall_score = row_data[3] if len(row_data) > 3 else 0
-                
-                # Format overall score (column D)
-                score_format = (excellent_format if overall_score >= 0.8 
-                              else good_format if overall_score >= 0.5 
-                              else poor_format)
-                
-                format_requests.append({
-                    'range': f"D{row_index}",
-                    'format': score_format
-                })
-                
-                # Format individual metric scores
-                col_offset = 5  # Metrics start from column E (5)
+
+                # Process overall score (column D)
+                if len(row_data) > 3:
+                    try:
+                        overall_score = float(row_data[3]) if row_data[3] != "" else 0
+                        cell_range = f"D{row_index}"
+
+                        if overall_score >= 0.8:
+                            excellent_ranges.append(cell_range)
+                        elif overall_score >= 0.5:
+                            good_ranges.append(cell_range)
+                        else:
+                            poor_ranges.append(cell_range)
+                    except (ValueError, TypeError):
+                        pass
+
+                # Process individual metric scores
                 for j, metric_name in enumerate(metric_names):
-                    col = col_offset + j
-                    if col < len(row_data):
+                    metric_index = 4 + j  # Metrics start at index 4
+                    col = 5 + j  # Columns start at E (5)
+
+                    if metric_index < len(row_data):
                         try:
-                            value = float(row_data[col - 1]) if row_data[col - 1] != "" else 0
-                            metric_format = (excellent_format if value >= 0.8 
-                                           else good_format if value >= 0.5 
-                                           else poor_format)
-                            
-                            format_requests.append({
-                                'range': f"{self._column_letter(col)}{row_index}",
-                                'format': metric_format
-                            })
+                            value = float(row_data[metric_index]) if row_data[metric_index] != "" else 0
+                            cell_range = f"{self._column_letter(col)}{row_index}"
+
+                            if value >= 0.8:
+                                excellent_ranges.append(cell_range)
+                            elif value >= 0.5:
+                                good_ranges.append(cell_range)
+                            else:
+                                poor_ranges.append(cell_range)
                         except (ValueError, TypeError, IndexError):
                             pass
 
-            # Apply formatting in smaller sub-batches to avoid overwhelming the API
-            batch_format_size = 10
-            for i in range(0, len(format_requests), batch_format_size):
-                sub_batch = format_requests[i:i + batch_format_size]
-                for req in sub_batch:
-                    try:
-                        self.worksheet.format(req['range'], req['format'])
-                    except Exception as e:
-                        logger.debug(f"Failed to format cell {req['range']}: {e}")
-                
-                # Small delay between format sub-batches
-                time.sleep(0.5)
-                        
+            # Apply formatting in batches by color
+            self._apply_format_to_ranges(excellent_ranges, excellent_format, "excellent")
+            self._apply_format_to_ranges(good_ranges, good_format, "good")
+            self._apply_format_to_ranges(poor_ranges, poor_format, "poor")
+
         except Exception as e:
-            logger.warning(f"Failed to apply conditional formatting for batch starting at row {start_row}: {e}")
+            logger.warning(f"Failed to apply conditional formatting: {e}")
+
+    def _apply_format_to_ranges(self, ranges: List[str], format_dict: dict, format_name: str):
+        """
+        Apply formatting to a list of ranges in batches.
+
+        Args:
+            ranges: List of cell ranges (e.g., ["D2", "E2", "F3"])
+            format_dict: Format to apply
+            format_name: Name for logging purposes
+        """
+        if not ranges:
+            return
+
+        # Apply formatting in smaller batches to avoid overwhelming the API
+        batch_size = 20
+        total_batches = (len(ranges) + batch_size - 1) // batch_size
+
+        logger.info(f"Applying {format_name} formatting to {len(ranges)} cells in {total_batches} batches")
+
+        for i in range(0, len(ranges), batch_size):
+            batch_ranges = ranges[i : i + batch_size]
+
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    # Apply formatting to each range in the batch
+                    for cell_range in batch_ranges:
+                        self.worksheet.format(cell_range, format_dict)
+
+                    logger.debug(f"Applied {format_name} formatting to batch {i//batch_size + 1}/{total_batches}")
+
+                    # Short delay between batches
+                    time.sleep(0.8)
+                    break
+
+                except Exception as e:
+                    if "429" in str(e) or "quota" in str(e).lower():
+                        wait_time = (attempt + 1) * 10
+                        logger.warning(f"Rate limit hit during formatting, waiting {wait_time} seconds")
+                        time.sleep(wait_time)
+                    else:
+                        logger.warning(f"Failed to apply {format_name} formatting to batch: {e}")
+                        break
+            else:
+                logger.warning(f"Failed to apply {format_name} formatting to batch after {max_retries} attempts")
 
     def upload_evaluation_results(
         self,

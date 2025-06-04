@@ -50,7 +50,7 @@ st.markdown(
     """
 <style>
     .metric-card {
-        background-color: #f9f9f9;
+        background-color: #524e4e;
         border-radius: 5px;
         padding: 15px;
         box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
@@ -455,35 +455,59 @@ def display_translation_examples(df: pd.DataFrame, worksheet_name: str):
 
     st.markdown(f"## Translation Examples: {worksheet_name}")
 
-    # Create a sample selector
     num_samples = len(df)
-    sample_idx = st.slider(
-        "Select a translation example to view: ",
-        min_value=0,
-        max_value=num_samples - 1 if num_samples > 0 else 0,
-        value=0,
-    )
+
+    # Initialize session state for sample index if it doesn't exist
+    if "sample_idx" not in st.session_state:
+        st.session_state.sample_idx = 0
+
+    # Ensure sample_idx is within bounds
+    if st.session_state.sample_idx >= num_samples:
+        st.session_state.sample_idx = 0
+    elif st.session_state.sample_idx < 0:
+        st.session_state.sample_idx = 0
 
     # Add navigation buttons
-    col1, col2, col3 = st.columns([1, 4, 1])
+    col1, col2, col3, col4, col5 = st.columns([1, 1, 2, 1, 1])
+
     with col1:
-        prev_disabled = sample_idx <= 0
-        if st.button("⬅️ Previous", disabled=prev_disabled):
-            st.session_state.sample_idx = max(0, sample_idx - 1)
-            st.rerun()
+        if st.button("⬅️ Previous", disabled=st.session_state.sample_idx <= 0):
+            st.session_state.sample_idx = max(0, st.session_state.sample_idx - 1)
+
+    with col2:
+        if st.button("Next ➡️", disabled=st.session_state.sample_idx >= num_samples - 1):
+            st.session_state.sample_idx = min(num_samples - 1, st.session_state.sample_idx + 1)
 
     with col3:
-        next_disabled = sample_idx >= num_samples - 1
-        if st.button("Next ➡️", disabled=next_disabled):
-            st.session_state.sample_idx = min(num_samples - 1, sample_idx + 1)
-            st.rerun()
+        st.markdown(f"**Example {st.session_state.sample_idx + 1} of {num_samples}**")
+
+    with col4:
+        if st.button("First"):
+            st.session_state.sample_idx = 0
+
+    with col5:
+        if st.button("Last"):
+            st.session_state.sample_idx = num_samples - 1
+
+    # Optional: Add a slider that syncs with session state
+    slider_value = st.slider(
+        "Or jump to example: ",
+        min_value=1,
+        max_value=num_samples if num_samples > 0 else 1,
+        value=st.session_state.sample_idx + 1,
+        key="example_slider",
+    )
+
+    # Update session state when slider changes
+    if slider_value - 1 != st.session_state.sample_idx:
+        st.session_state.sample_idx = slider_value - 1
 
     if num_samples == 0:
         st.info("No translation examples found")
         return
 
-    # Get the selected sample
-    sample = df.iloc[sample_idx]
+    # Get the selected sample using session state
+    sample = df.iloc[st.session_state.sample_idx]
 
     # Display the sample in a nice format
     st.markdown("### Translation Example")
