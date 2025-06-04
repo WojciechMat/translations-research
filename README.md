@@ -23,23 +23,20 @@ python -m translations.main
 python -m translations.main slice_spec=":20" data.random_seed=123
 
 # Use a different config file
-python -m translations.main --config-name=smt  # Future implementation
+python -m translations.main --config-name=moses
 
 # Build a dictionary from gemini
 python translations.main dictionary.build=true dictionary.source=gemini
 ```
-## Configuration Options
-The project uses Hydra for configuration management. The main configuration options are:
-
-- `data.source_lang`: Source language code (default: "en")
-- `data.target_lang`: Target language code (default: "pl")
-- `data.dataset_path`: Path to the dataset (default: "hf_datasets/EuroparlEnPl")
-- `slice_spec`: Slice specification (e.g., ":50", "-50:", "10:20") (default: ":10")
-- `dictionary.path`: Path to the dictionary file (default: "dictionaries/en_pl_dictionary.json")
-- `dictionary.keep_unknown`: Whether to keep unknown words (default: true)
-- `dictionary.lowercase`: Whether to lowercase input text (default: true)
-- `dictionary.build`: Whether to build a dictionary (default: false)
-- `dictionary.source`: Source for building the dictionary ("gemini" or "opus") (default: "opus")
+### Moses Translation
+Described in `docs/moses.md`
+### Using Google Sheets for experiment tracking
+Follow instructions on `docs/using_sheets.md` to use google sheets for experiment tracking.
+### Results overwiev
+Once you have some data in the google sheets, you can run results overview
+```sh
+python -m streamlit translations/results_dashboard.py
+```
 # Development
 
 ### Code Style

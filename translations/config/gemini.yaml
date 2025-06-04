@@ -2,9 +2,7 @@ defaults:
   - data: default
   - _self_
 
-translator: moses
-moses:
-  server_url: "http://localhost:8080/RPC2"
+translator: gemini
 
 use_sheets: false
 slice_spec: ":500"  # Default to first 10 examples

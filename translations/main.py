@@ -3,18 +3,30 @@
 English-Polish Translation Pipeline
 """
 
+import os
+import logging
 from typing import List, Optional
 
 import hydra
+from dotenv import load_dotenv
 from hydra.utils import to_absolute_path
 from omegaconf import OmegaConf, DictConfig
 
 from translations.metrics.metric import TestCase
 from translations.metrics.evaluator import TranslationEvaluator
+from translations.sheets_uploader import TranslationSheetsUploader
 from translations.models.moses.moses_translator import MosesTranslator
 from translations.models.brutal.brutal_translator import BrutalTranslator
+from translations.models.gemini.gemini_translator import GeminiTranslator
 from translations.models.brutal.dictionary_utils import prepare_dictionary
-from translations.data.management import TranslationDataset, EuroparlDataManager
+from translations.data.management import TranslationDataset, TranslationDatasetManager
+
+load_dotenv()
+
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 class TranslationPipeline:
@@ -23,7 +35,7 @@ class TranslationPipeline:
     def __init__(
         self,
         translator,
-        data_manager: EuroparlDataManager,
+        data_manager: TranslationDatasetManager,
         slice_spec: Optional[str] = None,
     ) -> None:
         """
@@ -122,20 +134,37 @@ class TranslationPipeline:
         self,
         results: TranslationDataset,
         metrics: List[str] = None,
-    ) -> dict:
+        evaluator: Optional[TranslationEvaluator] = None,
+    ) -> List[TestCase]:
         """
         Evaluate translation results using specified metrics.
 
         Args:
             results: Dataset with translated texts
             metrics: List of metric names to use
+            evaluator: Evaluator instance (optional)
 
         Returns:
-            Dictionary of metric results
+            List of evaluated test cases
         """
-        # For now, just a placeholder
-        print("Evaluation would happen here with these metrics: ", metrics)
-        return {"placeholder": 0.0}
+        if evaluator is None:
+            evaluator = TranslationEvaluator(metrics=metrics or ["bleu", "levenshtein", "precision_recall"])
+
+        test_cases = []
+
+        for i in range(len(results)):
+            pair = results[i]
+            test_case = TestCase(
+                original_text=pair.source,
+                expected_translation=self.data_manager.load_test_data().reference[i],
+                actual_translation=pair.target,
+            )
+
+            # Evaluate the test case
+            evaluator.evaluate_case(test_case=test_case)
+            test_cases.append(test_case)
+
+        return test_cases
 
     def display_results(
         self,
@@ -164,7 +193,7 @@ def main(cfg: DictConfig) -> None:
     print(OmegaConf.to_yaml(cfg))
 
     # Initialize data manager
-    data_manager = EuroparlDataManager(
+    data_manager = TranslationDatasetManager(
         source_lang=cfg.data.source_lang,
         target_lang=cfg.data.target_lang,
         random_seed=cfg.data.random_seed,
@@ -204,6 +233,9 @@ def main(cfg: DictConfig) -> None:
             if hasattr(cfg, "moses") and hasattr(cfg.moses, "server_url")
             else "http://localhost:8080/RPC2",
         )
+
+    elif cfg.translator == "gemini":
+        translator = GeminiTranslator()
     else:
         raise ValueError(f"Unsupported translator type: {cfg.translator}")
 
@@ -218,9 +250,11 @@ def main(cfg: DictConfig) -> None:
     results = pipeline.run(split="test")
 
     # Create evaluator with default metrics
-    evaluator = TranslationEvaluator(
-        metrics=["bleu", "levenshtein", "precision_recall", "token_overlap"],
-    )
+    metrics = ["bleu", "levenshtein", "precision_recall", "token_overlap", "llm_score"]
+    if hasattr(cfg, "metrics") and cfg.metrics:
+        metrics = cfg.metrics
+
+    evaluator = TranslationEvaluator(metrics=metrics)
 
     # Display results with metrics
     print(f"\nShowing {min(5, len(results))} translation examples with metrics: ")
@@ -260,11 +294,33 @@ def main(cfg: DictConfig) -> None:
     print("\nTest Case: ")
     print(test_case)
 
-    # Evaluate overall results
-    _ = pipeline.evaluate(
+    # Evaluate all results and get test cases
+    test_cases = pipeline.evaluate(
         results=results,
-        metrics=["bleu", "levenshtein", "precision_recall"],
+        metrics=metrics,
+        evaluator=evaluator,
     )
+
+    # Check if Google Sheets upload is enabled
+    use_sheets = False
+    if hasattr(cfg, "use_sheets"):
+        use_sheets = cfg.use_sheets
+
+    # Initialize and use Google Sheets uploader if requested and environment variable is set
+    if use_sheets and os.getenv("SHEET"):
+        logger.info("Uploading translation results to Google Sheets...")
+
+        # Initialize the uploader
+        uploader = TranslationSheetsUploader()
+
+        # Upload results
+        uploader.upload_evaluation_results(evaluator, test_cases)
+
+        logger.info(f"Successfully uploaded {len(test_cases)} test cases to Google Sheets")
+    elif use_sheets and not os.getenv("SHEET"):
+        logger.warning("SHEET environment variable not set. Skipping Google Sheets upload.")
+    else:
+        logger.info("Google Sheets upload not enabled. Set 'use_sheets=true' in config to enable.")
 
 
 if __name__ == "__main__":

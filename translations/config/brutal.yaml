@@ -12,4 +12,5 @@ dictionary:
   build: false
   source: "gemini"
 
+use_sheets: false
 slice_spec: ":10"  # Default to first 10 examples

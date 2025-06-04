@@ -5,3 +5,4 @@ defaults:
 # Common settings across all translation methods
 output_dir: ./results
 random_seed: 42
+use_sheets: false
